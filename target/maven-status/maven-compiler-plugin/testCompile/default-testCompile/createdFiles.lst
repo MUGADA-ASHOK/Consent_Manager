@@ -1,0 +1,3 @@
+com\depa\consent\RoleHierarchyAuthorizationTest.class
+com\depa\consent\StudentOnboardingRegistrationIntegrationTest.class
+com\depa\consent\ConsentAndAccessGrantIntegrationTest.class
