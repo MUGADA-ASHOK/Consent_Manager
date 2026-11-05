@@ -3,6 +3,7 @@ package com.depa.consent.controller;
 import com.depa.consent.dto.CreateUserRequest;
 import com.depa.consent.dto.ImportOnboardingRequest;
 import com.depa.consent.dto.ImportOnboardingResponse;
+import com.depa.consent.dto.ResetPasswordRequest;
 import com.depa.consent.dto.UserResponse;
 import com.depa.consent.security.UserPrincipal;
 import com.depa.consent.service.OnboardingService;
@@ -72,5 +73,14 @@ public class OrgAdminController {
             @AuthenticationPrincipal UserPrincipal actor
     ) {
         return ResponseEntity.ok(userService.activateUser(userId, actor));
+    }
+
+    @PatchMapping("/users/{userId}/reset-password")
+    public ResponseEntity<UserResponse> forceResetPassword(
+            @PathVariable("userId") String userId,
+            @Valid @RequestBody ResetPasswordRequest request,
+            @AuthenticationPrincipal UserPrincipal actor
+    ) {
+        return ResponseEntity.ok(userService.forceResetUserPassword(userId, request.getNewPassword(), actor));
     }
 }

@@ -137,17 +137,14 @@ class ConsentAndAccessGrantIntegrationTest {
         String pendingRequestsJson = mockMvc.perform(get("/api/consents/pending")
                         .header("Authorization", "Bearer " + studentS1001Token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].dataPrincipalId", is("S1001")))
-                .andExpect(jsonPath("$[0].requesterOrganizationCode", is("COLLEGE_B")))
-                .andExpect(jsonPath("$[0].requestedFields", hasItems("STUDENT_ID", "NAME", "STUDY_CERTIFICATE")))
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].dataPrincipalId", is("S1001")))
+                .andExpect(jsonPath("$.content[0].requesterOrganizationCode", is("COLLEGE_B")))
+                .andExpect(jsonPath("$.content[0].requestedFields", hasItems("STUDENT_ID", "NAME", "STUDY_CERTIFICATE")))
                 .andReturn().getResponse().getContentAsString();
 
-        List<ConsentRequestResponse> pendingList = objectMapper.readValue(
-                pendingRequestsJson,
-                objectMapper.getTypeFactory().constructCollectionType(List.class, ConsentRequestResponse.class)
-        );
-        String consentRequestId = pendingList.get(0).getId();
+        com.fasterxml.jackson.databind.JsonNode rootNode = objectMapper.readTree(pendingRequestsJson);
+        String consentRequestId = rootNode.path("content").get(0).get("id").asText();
 
         // Step 3: Student S1001 approves the consent request
         String approvalJson = mockMvc.perform(post("/api/consents/" + consentRequestId + "/approve")
