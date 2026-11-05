@@ -69,3 +69,4 @@ public class Notification {
     public void setRead(boolean read) { this.read = read; }
     public Instant getCreatedAt() { return createdAt; }
 }
+

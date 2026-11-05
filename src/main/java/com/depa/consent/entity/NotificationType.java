@@ -8,3 +8,4 @@ public enum NotificationType {
     CONSENT_REVOKED,
     CONSENT_EXPIRED
 }
+

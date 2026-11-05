@@ -63,3 +63,4 @@ public class NotificationController {
         return ResponseEntity.ok(notificationService.markAsRead(id, principalId));
     }
 }
+

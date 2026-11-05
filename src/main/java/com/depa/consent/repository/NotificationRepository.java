@@ -11,3 +11,4 @@ public interface NotificationRepository extends JpaRepository<Notification, Stri
     List<Notification> findByDataPrincipalIdOrderByCreatedAtDesc(String dataPrincipalId);
     long countByDataPrincipalIdAndReadFalse(String dataPrincipalId);
 }
+
