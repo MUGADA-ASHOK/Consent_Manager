@@ -77,7 +77,7 @@ export default function AdminDashboard() {
   }, []);
 
   const filteredLogs = auditLogs
-    .filter((l) => l.eventType !== 'CONSENT_APPROVED' && l.eventType !== 'CONSENT_REJECTED')
+    .filter((l) => !l.eventType?.includes('APPROVED') && !l.eventType?.includes('REJECT') && !l.eventType?.includes('DENI'))
     .filter(
       (l) =>
         l.eventType?.toLowerCase().includes(searchTerm.toLowerCase()) ||

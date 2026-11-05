@@ -48,7 +48,8 @@ public class AuditService {
         return auditLogRepository.findAllByOrderByTimestampDesc()
                 .stream()
                 .filter(log -> log.getEventType() != AuditEventType.CONSENT_APPROVED &&
-                               log.getEventType() != AuditEventType.CONSENT_REJECTED)
+                               log.getEventType() != AuditEventType.CONSENT_REJECTED &&
+                               log.getEventType() != AuditEventType.DATA_ACCESS_DENIED)
                 .collect(java.util.stream.Collectors.toList());
     }
 
