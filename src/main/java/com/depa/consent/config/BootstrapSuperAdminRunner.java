@@ -69,5 +69,87 @@ public class BootstrapSuperAdminRunner implements CommandLineRunner {
 
             log.info("Initialized default SUPER_ADMIN account: {}", normalizedEmail);
         }
+
+        // 2. Bootstrap College A Organization
+        Organization collegeA = organizationRepository.findByOrganizationCode("COLLEGE_A")
+                .orElseGet(() -> {
+                    Organization org = new Organization(
+                            "ORG_COLLEGE_A",
+                            "COLLEGE_A",
+                            "College A University",
+                            "admin@collegea.edu",
+                            "http://localhost:8081/api/auth/login",
+                            "http://localhost:8081/api/provider/onboarding/eligible-students",
+                            OrganizationStatus.ACTIVE
+                    );
+                    log.info("Bootstrapping default Organization: COLLEGE_A");
+                    return organizationRepository.save(org);
+                });
+
+        // 3. Bootstrap College B Organization
+        Organization collegeB = organizationRepository.findByOrganizationCode("COLLEGE_B")
+                .orElseGet(() -> {
+                    Organization org = new Organization(
+                            "ORG_COLLEGE_B",
+                            "COLLEGE_B",
+                            "College B Institute",
+                            "admin@collegeb.edu",
+                            null,
+                            null,
+                            OrganizationStatus.ACTIVE
+                    );
+                    log.info("Bootstrapping default Organization: COLLEGE_B");
+                    return organizationRepository.save(org);
+                });
+
+        // 4. Bootstrap Sample Student: Ashok Mugada (S1001)
+        if (!userRepository.existsByEmail("student1001@example.com")) {
+            User student = new User(
+                    "USR_S1001",
+                    "Ashok Mugada",
+                    "student1001@example.com",
+                    passwordEncoder.encode("Password@123"),
+                    collegeA.getOrganizationId(),
+                    "S1001",
+                    UserRole.USER,
+                    UserStatus.ACTIVE,
+                    true
+            );
+            userRepository.save(student);
+            log.info("Bootstrapped student principal: student1001@example.com (S1001) linked to COLLEGE_A");
+        }
+
+        // 5. Bootstrap Org Admins for College A and College B
+        if (!userRepository.existsByEmail("admin@collegea.edu")) {
+            User orgAdminA = new User(
+                    "USR_ORG_ADM_A",
+                    "College A Administrator",
+                    "admin@collegea.edu",
+                    passwordEncoder.encode("OrgAdmin@123"),
+                    collegeA.getOrganizationId(),
+                    null,
+                    UserRole.ORG_ADMIN,
+                    UserStatus.ACTIVE,
+                    true
+            );
+            userRepository.save(orgAdminA);
+            log.info("Bootstrapped Org Admin: admin@collegea.edu for COLLEGE_A");
+        }
+
+        if (!userRepository.existsByEmail("admin@collegeb.edu")) {
+            User orgAdminB = new User(
+                    "USR_ORG_ADM_B",
+                    "College B Administrator",
+                    "admin@collegeb.edu",
+                    passwordEncoder.encode("OrgAdmin@123"),
+                    collegeB.getOrganizationId(),
+                    null,
+                    UserRole.ORG_ADMIN,
+                    UserStatus.ACTIVE,
+                    true
+            );
+            userRepository.save(orgAdminB);
+            log.info("Bootstrapped Org Admin: admin@collegeb.edu for COLLEGE_B");
+        }
     }
 }
