@@ -34,12 +34,24 @@ public class AuthenticationService {
 
     @Transactional(noRollbackFor = AuthenticationFailedException.class)
     public AuthResponse login(LoginRequest request) {
-        String normalizedEmail = request.getEmail().trim().toLowerCase();
+        String rawIdentifier = request.getEmail() != null ? request.getEmail().trim() : "";
+        String normalizedEmail = rawIdentifier.toLowerCase();
 
+        // Support login by email OR by student / identity roll number (e.g., S1001)
         User user = userRepository.findByEmail(normalizedEmail)
+                .or(() -> userRepository.findByExternalIdentityId(rawIdentifier.toUpperCase()))
                 .orElse(null);
 
-        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        boolean passwordMatches = false;
+        if (user != null) {
+            passwordMatches = passwordEncoder.matches(request.getPassword(), user.getPasswordHash());
+            // Fallback for student accounts whose default password is their UserId / Roll Number
+            if (!passwordMatches && user.getExternalIdentityId() != null && request.getPassword().equals(user.getExternalIdentityId())) {
+                passwordMatches = true;
+            }
+        }
+
+        if (user == null || !passwordMatches) {
             auditService.logEvent(
                     AuditEventType.LOGIN_FAILURE,
                     user != null ? user.getUserId() : "UNKNOWN",
@@ -47,7 +59,7 @@ public class AuthenticationService {
                     "USER",
                     user != null ? user.getUserId() : null,
                     user != null ? user.getOrganizationId() : null,
-                    "Failed login attempt for email: " + normalizedEmail
+                    "Failed login attempt for identifier: " + rawIdentifier
             );
             throw new AuthenticationFailedException("Invalid email or password");
         }

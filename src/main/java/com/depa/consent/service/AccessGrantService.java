@@ -137,7 +137,7 @@ public class AccessGrantService {
         return new AccessGrantResponse(grant, requesterOrg.getOrganizationCode(), providerOrg.getOrganizationCode(), token);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<AccessGrantResponse> getGrantsForRequester(UserPrincipal actor) {
         if (actor == null || actor.getOrganizationId() == null) {
             throw new ForbiddenOperationException("Access Denied: No organization scope");
@@ -149,7 +149,13 @@ public class AccessGrantService {
         return grants.stream()
                 .map(g -> {
                     Organization prov = organizationService.getOrganizationEntityById(g.getProviderOrganizationId());
-                    String token = (g.getStatus() == AccessGrantStatus.ACTIVE && Instant.now().isBefore(g.getExpiresAt()))
+                    boolean isExpired = Instant.now().isAfter(g.getExpiresAt());
+                    if (isExpired && g.getStatus() == AccessGrantStatus.ACTIVE) {
+                        g.setStatus(AccessGrantStatus.EXPIRED);
+                        accessGrantRepository.save(g);
+                    }
+
+                    String token = (g.getStatus() == AccessGrantStatus.ACTIVE && !isExpired)
                             ? dataAccessJwtSigner.generateDataAccessJwt(
                                     requesterOrg.getOrganizationCode(),
                                     prov.getOrganizationCode(),

@@ -94,21 +94,21 @@ public class OnboardingService {
                 alreadyPending++;
             }
 
-            // 2. Persist student in users table with PENDING status
+            // 2. Persist student in users table with ACTIVE status and default password: studentId
             if (existingUser.isEmpty()) {
                 String userName = item.getName() != null && !item.getName().isBlank() ? item.getName().trim() : "Student " + studentId;
-                User pendingUser = new User(
+                User activeStudent = new User(
                         "USR_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
                         userName,
                         trustedEmail,
-                        "PENDING_REGISTRATION",
+                        passwordEncoder.encode(studentId),
                         organization.getOrganizationId(),
                         studentId,
                         UserRole.USER,
-                        UserStatus.PENDING,
-                        false
+                        UserStatus.ACTIVE,
+                        true
                 );
-                userRepository.save(pendingUser);
+                userRepository.save(activeStudent);
             }
 
             // 3. Invalidate previous pending invitations
