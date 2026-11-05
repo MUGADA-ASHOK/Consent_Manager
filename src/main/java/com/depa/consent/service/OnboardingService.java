@@ -25,17 +25,20 @@ public class OnboardingService {
     private final UserInvitationRepository userInvitationRepository;
     private final EmailDeliveryService emailDeliveryService;
     private final AuditService auditService;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public OnboardingService(OrganizationService organizationService,
                              UserRepository userRepository,
                              UserInvitationRepository userInvitationRepository,
                              EmailDeliveryService emailDeliveryService,
-                             AuditService auditService) {
+                             AuditService auditService,
+                             org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.organizationService = organizationService;
         this.userRepository = userRepository;
         this.userInvitationRepository = userInvitationRepository;
         this.emailDeliveryService = emailDeliveryService;
         this.auditService = auditService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     /**
@@ -91,21 +94,21 @@ public class OnboardingService {
                 alreadyPending++;
             }
 
-            // 2. Persist student in users table with PENDING status
+            // 2. Persist student in users table with ACTIVE status and default password: studentId
             if (existingUser.isEmpty()) {
                 String userName = item.getName() != null && !item.getName().isBlank() ? item.getName().trim() : "Student " + studentId;
-                User pendingUser = new User(
+                User activeStudent = new User(
                         "USR_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
                         userName,
                         trustedEmail,
-                        "PENDING_REGISTRATION",
+                        passwordEncoder.encode(studentId),
                         organization.getOrganizationId(),
                         studentId,
                         UserRole.USER,
-                        UserStatus.PENDING,
-                        false
+                        UserStatus.ACTIVE,
+                        true
                 );
-                userRepository.save(pendingUser);
+                userRepository.save(activeStudent);
             }
 
             // 3. Invalidate previous pending invitations
@@ -190,25 +193,27 @@ public class OnboardingService {
                     studentId
             );
 
-            if (existingUser.isPresent() && existingUser.get().getStatus() == UserStatus.ACTIVE && existingUser.get().isEmailVerified()) {
-                skippedCount++;
-                continue;
-            }
-
+            String userName = item.getName() != null && !item.getName().isBlank() ? item.getName().trim() : "Student " + studentId;
             if (existingUser.isEmpty()) {
-                String userName = item.getName() != null && !item.getName().isBlank() ? item.getName().trim() : "Student " + studentId;
-                User pendingUser = new User(
+                User activeUser = new User(
                         "USR_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
                         userName,
                         trustedEmail,
-                        "PENDING_REGISTRATION",
+                        passwordEncoder.encode(studentId),
                         organization.getOrganizationId(),
                         studentId,
                         UserRole.USER,
-                        UserStatus.PENDING,
-                        false
+                        UserStatus.ACTIVE,
+                        true
                 );
-                userRepository.save(pendingUser);
+                userRepository.save(activeUser);
+            } else {
+                User user = existingUser.get();
+                user.setPasswordHash(passwordEncoder.encode(studentId));
+                user.setStatus(UserStatus.ACTIVE);
+                user.setEmailVerified(true);
+                user.setName(userName);
+                userRepository.save(user);
             }
 
             List<UserInvitation> previousInvitations = userInvitationRepository

@@ -75,4 +75,16 @@ public class EmailDeliveryService {
         log.info("Expires in: 10 minutes");
         log.info("==================================================================");
     }
+
+    public void sendNoticeEmail(String targetEmail, String studentId, String title, String message, String orgCode, String purpose) {
+        log.info("==================================================================");
+        log.info("[EMAIL SERVICE] STUDENT NOTICE DISPATCHED: {}", title);
+        log.info("To: {} (Student ID: {})", maskEmail(targetEmail), studentId);
+        log.info("Organization: {}", orgCode != null ? orgCode : "SYSTEM");
+        if (purpose != null) {
+            log.info("Purpose: {}", purpose);
+        }
+        log.info("Message: {}", message);
+        log.info("==================================================================");
+    }
 }

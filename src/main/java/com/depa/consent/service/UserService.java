@@ -301,6 +301,39 @@ public class UserService {
         return new UserResponse(updated);
     }
 
+    public UserResponse forceResetUserPassword(String userId, String newPassword, UserPrincipal actor) {
+        User targetUser = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + userId));
+
+        if (actor.getRole() == UserRole.ORG_ADMIN) {
+            if (targetUser.getOrganizationId() == null || !targetUser.getOrganizationId().equals(actor.getOrganizationId())) {
+                throw new ForbiddenOperationException("Access Denied: You cannot reset password for users from another organization");
+            }
+        }
+
+        targetUser.setPasswordHash(passwordEncoder.encode(newPassword));
+        
+        // If they were pending registration, active them now that they have a password
+        if (targetUser.getStatus() == UserStatus.PENDING) {
+            targetUser.setStatus(UserStatus.ACTIVE);
+            targetUser.setEmailVerified(true);
+        }
+
+        User updated = userRepository.save(targetUser);
+
+        auditService.logEvent(
+                AuditEventType.USER_ACTIVATED, // Reuse event type or create a new one
+                actor.getUserId(),
+                actor.getRole().name(),
+                "USER",
+                updated.getUserId(),
+                updated.getOrganizationId(),
+                "Password forcibly reset by administrator for: " + updated.getEmail()
+        );
+
+        return new UserResponse(updated);
+    }
+
     @Transactional(readOnly = true)
     public UserResponse getUserProfile(UserPrincipal actor) {
         User user = userRepository.findById(actor.getUserId())

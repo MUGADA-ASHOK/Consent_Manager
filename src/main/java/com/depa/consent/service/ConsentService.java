@@ -17,8 +17,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import com.depa.consent.entity.NotificationType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 @Transactional
@@ -31,6 +38,7 @@ public class ConsentService {
     private final OrganizationService organizationService;
     private final DataAccessJwtSigner dataAccessJwtSigner;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     public ConsentService(ConsentRequestRepository consentRequestRepository,
                           ConsentRepository consentRepository,
@@ -38,7 +46,8 @@ public class ConsentService {
                           DataRequestRepository dataRequestRepository,
                           OrganizationService organizationService,
                           DataAccessJwtSigner dataAccessJwtSigner,
-                          AuditService auditService) {
+                          AuditService auditService,
+                          NotificationService notificationService) {
         this.consentRequestRepository = consentRequestRepository;
         this.consentRepository = consentRepository;
         this.accessGrantRepository = accessGrantRepository;
@@ -46,6 +55,7 @@ public class ConsentService {
         this.organizationService = organizationService;
         this.dataAccessJwtSigner = dataAccessJwtSigner;
         this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
     public ConsentRequest createConsentRequest(DataRequest dataRequest) {
@@ -66,6 +76,8 @@ public class ConsentService {
 
         ConsentRequest saved = consentRequestRepository.save(consentRequest);
 
+        Organization reqOrg = organizationService.getOrganizationEntityById(dataRequest.getRequesterOrganizationId());
+
         auditService.logEvent(
                 AuditEventType.CONSENT_REQUEST_CREATED,
                 dataRequest.getRequesterUserId(),
@@ -73,26 +85,62 @@ public class ConsentService {
                 "CONSENT_REQUEST",
                 saved.getId(),
                 dataRequest.getProviderOrganizationId(),
+                dataRequest.getDataPrincipalId(),
                 String.format("Consent request created for Principal=%s: RequesterOrg=%s, Purpose=%s",
-                        dataRequest.getDataPrincipalId(), dataRequest.getRequesterOrganizationId(), dataRequest.getPurpose())
+                        dataRequest.getDataPrincipalId(), reqOrg.getOrganizationCode(), dataRequest.getPurpose())
+        );
+
+        notificationService.sendNotification(
+                dataRequest.getDataPrincipalId(),
+                NotificationType.NEW_CONSENT_REQUEST,
+                "New Consent Request from " + reqOrg.getName(),
+                "Organization " + reqOrg.getName() + " has requested access to your academic records for purpose: " + dataRequest.getPurpose(),
+                reqOrg.getOrganizationCode(),
+                dataRequest.getPurpose()
         );
 
         return saved;
     }
 
-    @Transactional(readOnly = true)
-    public List<ConsentRequestResponse> getPendingConsentRequestsForPrincipal(UserPrincipal actor) {
+    public Page<ConsentRequestResponse> getPendingConsentRequestsForPrincipal(UserPrincipal actor, Pageable pageable) {
         validateDataPrincipalActor(actor);
 
         String principalId = actor.getExternalIdentityId().trim().toUpperCase();
         String orgId = actor.getOrganizationId();
 
-        List<ConsentRequest> list = consentRequestRepository
-                .findByDataPrincipalIdAndDataPrincipalOrganizationIdAndStatus(principalId, orgId, ConsentRequestStatus.PENDING);
+        auditService.logEvent(
+                AuditEventType.CONSENT_REQUEST_PRESENTED,
+                actor.getUserId(),
+                actor.getRole().name(),
+                "CONSENT_REQUEST",
+                "PENDING_LIST",
+                orgId,
+                principalId,
+                "Pending consent requests presented to Data Principal=" + principalId
+        );
 
-        return list.stream()
-                .map(this::mapToConsentRequestResponse)
-                .collect(Collectors.toList());
+        Page<ConsentRequest> page = consentRequestRepository
+                .findByDataPrincipalIdAndDataPrincipalOrganizationIdAndStatus(principalId, orgId, ConsentRequestStatus.PENDING, pageable);
+
+        Set<String> orgIds = new HashSet<>();
+        page.getContent().forEach(req -> {
+            orgIds.add(req.getDataPrincipalOrganizationId());
+            orgIds.add(req.getRequesterOrganizationId());
+        });
+        
+        Map<String, Organization> orgMap = organizationService.getOrganizationsByIds(orgIds);
+
+        return page.map(req -> {
+            Organization providerOrg = orgMap.get(req.getDataPrincipalOrganizationId());
+            Organization requesterOrg = orgMap.get(req.getRequesterOrganizationId());
+            return new ConsentRequestResponse(
+                    req,
+                    providerOrg != null ? providerOrg.getOrganizationCode() : "UNKNOWN",
+                    providerOrg != null ? providerOrg.getName() : "Unknown",
+                    requesterOrg != null ? requesterOrg.getOrganizationCode() : "UNKNOWN",
+                    requesterOrg != null ? requesterOrg.getName() : "Unknown"
+            );
+        });
     }
 
     @Transactional(readOnly = true)
@@ -136,7 +184,7 @@ public class ConsentService {
 
         // Determine approved fields (subset or full requested list)
         List<String> approvedFields;
-        if (approvalRequest != null && approvalRequest.getApprovedFields() != null && !approvalRequest.getApprovedFields().isEmpty()) {
+        if (approvalRequest != null && approvalRequest.getApprovedFields() != null) {
             approvedFields = new ArrayList<>(approvalRequest.getApprovedFields());
         } else {
             approvedFields = new ArrayList<>(consentRequest.getRequestedFields());
@@ -202,6 +250,7 @@ public class ConsentService {
                 "CONSENT",
                 savedConsent.getId(),
                 providerOrg.getOrganizationId(),
+                consentRequest.getDataPrincipalId(),
                 String.format("Consent approved by Principal=%s for Requester=%s with GrantId=%s",
                         consentRequest.getDataPrincipalId(), requesterOrg.getOrganizationCode(), savedGrant.getId())
         );
@@ -213,7 +262,17 @@ public class ConsentService {
                 "ACCESS_GRANT",
                 savedGrant.getId(),
                 providerOrg.getOrganizationId(),
+                consentRequest.getDataPrincipalId(),
                 String.format("Access grant issued: GrantId=%s, Scope=%s", savedGrant.getId(), approvedFields)
+        );
+
+        notificationService.sendNotification(
+                consentRequest.getDataPrincipalId(),
+                NotificationType.CONSENT_APPROVED,
+                "Consent Approved for " + requesterOrg.getName(),
+                "You approved data access for " + requesterOrg.getName() + ". Access grant " + savedGrant.getId() + " issued.",
+                requesterOrg.getOrganizationCode(),
+                consentRequest.getPurpose()
         );
 
         return new AccessGrantResponse(
@@ -250,7 +309,18 @@ public class ConsentService {
                 "CONSENT_REQUEST",
                 consentRequest.getId(),
                 consentRequest.getDataPrincipalOrganizationId(),
+                consentRequest.getDataPrincipalId(),
                 "Consent request rejected by Data Principal: " + consentRequest.getDataPrincipalId()
+        );
+
+        Organization requesterOrg = organizationService.getOrganizationEntityById(consentRequest.getRequesterOrganizationId());
+        notificationService.sendNotification(
+                consentRequest.getDataPrincipalId(),
+                NotificationType.CONSENT_DENIED,
+                "Consent Request Denied",
+                "You denied data access request from " + requesterOrg.getName() + ".",
+                requesterOrg.getOrganizationCode(),
+                consentRequest.getPurpose()
         );
     }
 
@@ -285,26 +355,48 @@ public class ConsentService {
                 "CONSENT",
                 consent.getId(),
                 consent.getProviderOrganizationId(),
+                consent.getDataPrincipalId(),
                 "Consent revoked by Principal=" + consent.getDataPrincipalId() + ". Associated grants revoked."
+        );
+
+        Organization requesterOrg = organizationService.getOrganizationEntityById(consent.getRequesterOrganizationId());
+        notificationService.sendNotification(
+                consent.getDataPrincipalId(),
+                NotificationType.CONSENT_REVOKED,
+                "Consent Revoked for " + requesterOrg.getName(),
+                "Your consent for " + requesterOrg.getName() + " has been revoked. All active access grants are invalidated.",
+                requesterOrg.getOrganizationCode(),
+                consent.getPurpose()
         );
     }
 
     @Transactional(readOnly = true)
-    public List<ConsentResponse> getConsentsForPrincipal(UserPrincipal actor) {
+    public Page<ConsentResponse> getConsentsForPrincipal(UserPrincipal actor, Pageable pageable) {
         validateDataPrincipalActor(actor);
 
-        List<Consent> consents = consentRepository.findByDataPrincipalIdAndProviderOrganizationId(
+        Page<Consent> page = consentRepository.findByDataPrincipalIdAndProviderOrganizationId(
                 actor.getExternalIdentityId().trim().toUpperCase(),
-                actor.getOrganizationId()
+                actor.getOrganizationId(),
+                pageable
         );
 
-        return consents.stream()
-                .map(c -> {
-                    Organization providerOrg = organizationService.getOrganizationEntityById(c.getProviderOrganizationId());
-                    Organization requesterOrg = organizationService.getOrganizationEntityById(c.getRequesterOrganizationId());
-                    return new ConsentResponse(c, providerOrg.getOrganizationCode(), requesterOrg.getOrganizationCode());
-                })
-                .collect(Collectors.toList());
+        Set<String> orgIds = new HashSet<>();
+        page.getContent().forEach(c -> {
+            orgIds.add(c.getProviderOrganizationId());
+            orgIds.add(c.getRequesterOrganizationId());
+        });
+        
+        Map<String, Organization> orgMap = organizationService.getOrganizationsByIds(orgIds);
+
+        return page.map(c -> {
+            Organization providerOrg = orgMap.get(c.getProviderOrganizationId());
+            Organization requesterOrg = orgMap.get(c.getRequesterOrganizationId());
+            return new ConsentResponse(
+                    c, 
+                    providerOrg != null ? providerOrg.getOrganizationCode() : "UNKNOWN", 
+                    requesterOrg != null ? requesterOrg.getOrganizationCode() : "UNKNOWN"
+            );
+        });
     }
 
     private void validateDataPrincipalActor(UserPrincipal actor) {

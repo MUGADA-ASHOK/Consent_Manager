@@ -7,6 +7,7 @@ import com.depa.consent.exception.ForbiddenOperationException;
 import com.depa.consent.exception.ResourceNotFoundException;
 import com.depa.consent.repository.AccessGrantRepository;
 import com.depa.consent.repository.ConsentRepository;
+import com.depa.consent.security.DataAccessJwtSigner;
 import com.depa.consent.security.RsaKeyProvider;
 import com.depa.consent.security.UserPrincipal;
 import org.springframework.stereotype.Service;
@@ -25,17 +26,20 @@ public class AccessGrantService {
     private final OrganizationService organizationService;
     private final RsaKeyProvider rsaKeyProvider;
     private final AuditService auditService;
+    private final DataAccessJwtSigner dataAccessJwtSigner;
 
     public AccessGrantService(AccessGrantRepository accessGrantRepository,
                               ConsentRepository consentRepository,
                               OrganizationService organizationService,
                               RsaKeyProvider rsaKeyProvider,
-                              AuditService auditService) {
+                              AuditService auditService,
+                              DataAccessJwtSigner dataAccessJwtSigner) {
         this.accessGrantRepository = accessGrantRepository;
         this.consentRepository = consentRepository;
         this.organizationService = organizationService;
         this.rsaKeyProvider = rsaKeyProvider;
         this.auditService = auditService;
+        this.dataAccessJwtSigner = dataAccessJwtSigner;
     }
 
     /**
@@ -78,13 +82,15 @@ public class AccessGrantService {
         Organization providerOrg = organizationService.getOrganizationEntityById(grant.getProviderOrganizationId());
 
         auditService.logEvent(
-                AuditEventType.ACCESS_GRANT_VALIDATED,
-                "PROVIDER_CLIENT",
-                "SYSTEM",
+                AuditEventType.CONSENT_VALIDATED_BY_PROVIDER,
+                "PROVIDER_" + providerOrg.getOrganizationCode(),
+                "PROVIDER",
                 "ACCESS_GRANT",
                 grant.getId(),
                 grant.getProviderOrganizationId(),
-                "Access grant live validation succeeded for GrantId=" + grant.getId()
+                grant.getDataPrincipalId(),
+                String.format("Live consent validation succeeded for Principal=%s by Provider=%s for Requester=%s",
+                        grant.getDataPrincipalId(), providerOrg.getOrganizationCode(), requesterOrg.getOrganizationCode())
         );
 
         return GrantValidationResponse.valid(
@@ -117,10 +123,21 @@ public class AccessGrantService {
         Organization requesterOrg = organizationService.getOrganizationEntityById(grant.getRequesterOrganizationId());
         Organization providerOrg = organizationService.getOrganizationEntityById(grant.getProviderOrganizationId());
 
-        return new AccessGrantResponse(grant, requesterOrg.getOrganizationCode(), providerOrg.getOrganizationCode(), null);
+        String token = (grant.getStatus() == AccessGrantStatus.ACTIVE && Instant.now().isBefore(grant.getExpiresAt()))
+                ? dataAccessJwtSigner.generateDataAccessJwt(
+                        requesterOrg.getOrganizationCode(),
+                        providerOrg.getOrganizationCode(),
+                        grant.getId(),
+                        grant.getDataPrincipalId(),
+                        grant.getPurpose(),
+                        grant.getApprovedFields(),
+                        grant.getExpiresAt())
+                : null;
+
+        return new AccessGrantResponse(grant, requesterOrg.getOrganizationCode(), providerOrg.getOrganizationCode(), token);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<AccessGrantResponse> getGrantsForRequester(UserPrincipal actor) {
         if (actor == null || actor.getOrganizationId() == null) {
             throw new ForbiddenOperationException("Access Denied: No organization scope");
@@ -132,7 +149,23 @@ public class AccessGrantService {
         return grants.stream()
                 .map(g -> {
                     Organization prov = organizationService.getOrganizationEntityById(g.getProviderOrganizationId());
-                    return new AccessGrantResponse(g, requesterOrg.getOrganizationCode(), prov.getOrganizationCode(), null);
+                    boolean isExpired = Instant.now().isAfter(g.getExpiresAt());
+                    if (isExpired && g.getStatus() == AccessGrantStatus.ACTIVE) {
+                        g.setStatus(AccessGrantStatus.EXPIRED);
+                        accessGrantRepository.save(g);
+                    }
+
+                    String token = (g.getStatus() == AccessGrantStatus.ACTIVE && !isExpired)
+                            ? dataAccessJwtSigner.generateDataAccessJwt(
+                                    requesterOrg.getOrganizationCode(),
+                                    prov.getOrganizationCode(),
+                                    g.getId(),
+                                    g.getDataPrincipalId(),
+                                    g.getPurpose(),
+                                    g.getApprovedFields(),
+                                    g.getExpiresAt())
+                            : null;
+                    return new AccessGrantResponse(g, requesterOrg.getOrganizationCode(), prov.getOrganizationCode(), token);
                 })
                 .collect(Collectors.toList());
     }

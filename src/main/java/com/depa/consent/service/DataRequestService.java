@@ -7,6 +7,7 @@ import com.depa.consent.exception.ForbiddenOperationException;
 import com.depa.consent.exception.InvalidLifecycleTransitionException;
 import com.depa.consent.exception.ResourceNotFoundException;
 import com.depa.consent.repository.DataRequestRepository;
+import com.depa.consent.repository.UserRepository;
 import com.depa.consent.security.UserPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,15 +26,18 @@ public class DataRequestService {
     private final OrganizationService organizationService;
     private final ConsentService consentService;
     private final AuditService auditService;
+    private final UserRepository userRepository;
 
     public DataRequestService(DataRequestRepository dataRequestRepository,
                               OrganizationService organizationService,
                               ConsentService consentService,
-                              AuditService auditService) {
+                              AuditService auditService,
+                              UserRepository userRepository) {
         this.dataRequestRepository = dataRequestRepository;
         this.organizationService = organizationService;
         this.consentService = consentService;
         this.auditService = auditService;
+        this.userRepository = userRepository;
     }
 
     public DataRequestResponse createDataRequest(CreateDataRequest request, UserPrincipal actor) {
@@ -60,11 +64,41 @@ public class DataRequestService {
             );
         }
 
-        if (requesterOrg.getOrganizationId().equals(providerOrg.getOrganizationId())) {
-            throw new IllegalArgumentException("Requester organization and provider organization cannot be the same entity.");
+        if (requesterOrg.getOrganizationId().equals(providerOrg.getOrganizationId()) ||
+            requesterOrg.getOrganizationCode().equalsIgnoreCase(providerOrg.getOrganizationCode())) {
+            throw new IllegalArgumentException(
+                    String.format("Self-Request Prohibited: Requester organization '%s' and provider organization cannot be the same entity.",
+                            requesterOrg.getOrganizationCode())
+            );
         }
 
         String dataPrincipalId = request.getDataPrincipalId().trim().toUpperCase();
+
+        // 3. Strong Validation: An organization cannot request or consume data belonging to its own student
+        boolean studentBelongsToRequester = userRepository.existsByOrganizationIdAndExternalIdentityId(
+                requesterOrg.getOrganizationId(), dataPrincipalId
+        );
+
+        if (studentBelongsToRequester) {
+            throw new ForbiddenOperationException(
+                    String.format("Self-Consumption Prohibited: Organization '%s' cannot request or consume academic records for student '%s' because this student is registered under / belongs to '%s'. Internal institutional records must not be routed via external DEPA consent mechanisms.",
+                            requesterOrg.getOrganizationCode(), dataPrincipalId, requesterOrg.getOrganizationCode())
+            );
+        }
+
+        // 4. Validate that the student actually belongs to the target Provider organization
+        java.util.Optional<User> studentUserOpt = userRepository.findByExternalIdentityId(dataPrincipalId);
+        if (studentUserOpt.isPresent()) {
+            User studentUser = studentUserOpt.get();
+            if (studentUser.getOrganizationId() != null && !studentUser.getOrganizationId().equals(providerOrg.getOrganizationId())) {
+                Organization studentActualHome = organizationService.getOrganizationEntityById(studentUser.getOrganizationId());
+                throw new IllegalArgumentException(
+                        String.format("Institutional Boundary Mismatch: Student '%s' is registered under custodian organization '%s', not '%s'. Requests for this student must be directed to '%s'.",
+                                dataPrincipalId, studentActualHome.getOrganizationCode(), providerOrg.getOrganizationCode(), studentActualHome.getOrganizationCode())
+                );
+            }
+        }
+
         String requestId = "DREQ_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         Instant expiresAt = Instant.now().plus(7, ChronoUnit.DAYS);
 
