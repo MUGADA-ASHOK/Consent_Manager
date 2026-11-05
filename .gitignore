@@ -43,6 +43,11 @@ buildNumber.properties
 .classpath
 .project
 
-# OS specific
+# Frontend
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+.env.local
 .DS_Store
 Thumbs.db
