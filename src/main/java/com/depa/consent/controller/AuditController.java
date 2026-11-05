@@ -93,6 +93,18 @@ public class AuditController {
             );
         }
 
+        // If data was consumed and accepted by receiver, trigger completion notification
+        if (request.getEventType().name().equals("DATA_CONSUMED_BY_RECEIVER") && request.getDataPrincipalId() != null) {
+            notificationService.sendNotification(
+                    request.getDataPrincipalId(),
+                    NotificationType.DATA_SHARED,
+                    "Data Accepted by " + (request.getOrganizationCode() != null ? request.getOrganizationCode() : "Consumer"),
+                    "Your verified academic records have been accepted and ingested by " + (request.getOrganizationCode() != null ? request.getOrganizationCode() : "Requester") + ".",
+                    request.getOrganizationCode(),
+                    "Completed DEPA data exchange cycle for access grant " + request.getGrantId()
+            );
+        }
+
         return ResponseEntity.ok(Map.of("status", "LOGGED", "eventType", request.getEventType().name()));
     }
 }
