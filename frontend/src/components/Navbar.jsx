@@ -81,3 +81,4 @@ export default function Navbar({ unreadCount = 0, onNotificationClick }) {
     </header>
   );
 }
+
