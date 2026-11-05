@@ -44,7 +44,12 @@ public class AuditService {
 
     @Transactional(readOnly = true)
     public List<AuditLog> getAllAuditLogs() {
-        return auditLogRepository.findAllByOrderByTimestampDesc();
+        // Privacy Guard: Super Admin / CM Admin cannot view student-sovereign consent decisions (Approvals & Denials)
+        return auditLogRepository.findAllByOrderByTimestampDesc()
+                .stream()
+                .filter(log -> log.getEventType() != AuditEventType.CONSENT_APPROVED &&
+                               log.getEventType() != AuditEventType.CONSENT_REJECTED)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     @Transactional(readOnly = true)

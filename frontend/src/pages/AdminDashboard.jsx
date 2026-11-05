@@ -76,12 +76,14 @@ export default function AdminDashboard() {
     loadAll();
   }, []);
 
-  const filteredLogs = auditLogs.filter(
-    (l) =>
-      l.eventType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.actorId?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLogs = auditLogs
+    .filter((l) => l.eventType !== 'CONSENT_APPROVED' && l.eventType !== 'CONSENT_REJECTED')
+    .filter(
+      (l) =>
+        l.eventType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        l.details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        l.actorId?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -107,6 +109,15 @@ export default function AdminDashboard() {
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Audit Logs</span>
         </button>
+      </div>
+
+      {/* Privacy Guard Notice */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-indigo-900">
+        <div className="flex items-center space-x-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span><strong>DEPA Fiduciary Privacy Guard:</strong> Individual student consent decisions (Approvals &amp; Denials) are strictly sovereign to Data Principals and excluded from Super Admin governance view.</span>
+        </div>
+        <span className="font-mono text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Zero-Knowledge Trust Anchor</span>
       </div>
 
       {/* Metrics Grid */}
