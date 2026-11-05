@@ -78,13 +78,15 @@ public class AccessGrantService {
         Organization providerOrg = organizationService.getOrganizationEntityById(grant.getProviderOrganizationId());
 
         auditService.logEvent(
-                AuditEventType.ACCESS_GRANT_VALIDATED,
-                "PROVIDER_CLIENT",
-                "SYSTEM",
+                AuditEventType.CONSENT_VALIDATED_BY_PROVIDER,
+                "PROVIDER_" + providerOrg.getOrganizationCode(),
+                "PROVIDER",
                 "ACCESS_GRANT",
                 grant.getId(),
                 grant.getProviderOrganizationId(),
-                "Access grant live validation succeeded for GrantId=" + grant.getId()
+                grant.getDataPrincipalId(),
+                String.format("Live consent validation succeeded for Principal=%s by Provider=%s for Requester=%s",
+                        grant.getDataPrincipalId(), providerOrg.getOrganizationCode(), requesterOrg.getOrganizationCode())
         );
 
         return GrantValidationResponse.valid(

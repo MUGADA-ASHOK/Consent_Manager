@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.depa.consent.entity.NotificationType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -37,6 +38,7 @@ public class ConsentService {
     private final OrganizationService organizationService;
     private final DataAccessJwtSigner dataAccessJwtSigner;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     public ConsentService(ConsentRequestRepository consentRequestRepository,
                           ConsentRepository consentRepository,
@@ -44,7 +46,8 @@ public class ConsentService {
                           DataRequestRepository dataRequestRepository,
                           OrganizationService organizationService,
                           DataAccessJwtSigner dataAccessJwtSigner,
-                          AuditService auditService) {
+                          AuditService auditService,
+                          NotificationService notificationService) {
         this.consentRequestRepository = consentRequestRepository;
         this.consentRepository = consentRepository;
         this.accessGrantRepository = accessGrantRepository;
@@ -52,6 +55,7 @@ public class ConsentService {
         this.organizationService = organizationService;
         this.dataAccessJwtSigner = dataAccessJwtSigner;
         this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
     public ConsentRequest createConsentRequest(DataRequest dataRequest) {
@@ -72,6 +76,8 @@ public class ConsentService {
 
         ConsentRequest saved = consentRequestRepository.save(consentRequest);
 
+        Organization reqOrg = organizationService.getOrganizationEntityById(dataRequest.getRequesterOrganizationId());
+
         auditService.logEvent(
                 AuditEventType.CONSENT_REQUEST_CREATED,
                 dataRequest.getRequesterUserId(),
@@ -79,19 +85,39 @@ public class ConsentService {
                 "CONSENT_REQUEST",
                 saved.getId(),
                 dataRequest.getProviderOrganizationId(),
+                dataRequest.getDataPrincipalId(),
                 String.format("Consent request created for Principal=%s: RequesterOrg=%s, Purpose=%s",
-                        dataRequest.getDataPrincipalId(), dataRequest.getRequesterOrganizationId(), dataRequest.getPurpose())
+                        dataRequest.getDataPrincipalId(), reqOrg.getOrganizationCode(), dataRequest.getPurpose())
+        );
+
+        notificationService.sendNotification(
+                dataRequest.getDataPrincipalId(),
+                NotificationType.NEW_CONSENT_REQUEST,
+                "New Consent Request from " + reqOrg.getName(),
+                "Organization " + reqOrg.getName() + " has requested access to your academic records for purpose: " + dataRequest.getPurpose(),
+                reqOrg.getOrganizationCode(),
+                dataRequest.getPurpose()
         );
 
         return saved;
     }
 
-    @Transactional(readOnly = true)
     public Page<ConsentRequestResponse> getPendingConsentRequestsForPrincipal(UserPrincipal actor, Pageable pageable) {
         validateDataPrincipalActor(actor);
 
         String principalId = actor.getExternalIdentityId().trim().toUpperCase();
         String orgId = actor.getOrganizationId();
+
+        auditService.logEvent(
+                AuditEventType.CONSENT_REQUEST_PRESENTED,
+                actor.getUserId(),
+                actor.getRole().name(),
+                "CONSENT_REQUEST",
+                "PENDING_LIST",
+                orgId,
+                principalId,
+                "Pending consent requests presented to Data Principal=" + principalId
+        );
 
         Page<ConsentRequest> page = consentRequestRepository
                 .findByDataPrincipalIdAndDataPrincipalOrganizationIdAndStatus(principalId, orgId, ConsentRequestStatus.PENDING, pageable);
@@ -224,6 +250,7 @@ public class ConsentService {
                 "CONSENT",
                 savedConsent.getId(),
                 providerOrg.getOrganizationId(),
+                consentRequest.getDataPrincipalId(),
                 String.format("Consent approved by Principal=%s for Requester=%s with GrantId=%s",
                         consentRequest.getDataPrincipalId(), requesterOrg.getOrganizationCode(), savedGrant.getId())
         );
@@ -235,7 +262,17 @@ public class ConsentService {
                 "ACCESS_GRANT",
                 savedGrant.getId(),
                 providerOrg.getOrganizationId(),
+                consentRequest.getDataPrincipalId(),
                 String.format("Access grant issued: GrantId=%s, Scope=%s", savedGrant.getId(), approvedFields)
+        );
+
+        notificationService.sendNotification(
+                consentRequest.getDataPrincipalId(),
+                NotificationType.CONSENT_APPROVED,
+                "Consent Approved for " + requesterOrg.getName(),
+                "You approved data access for " + requesterOrg.getName() + ". Access grant " + savedGrant.getId() + " issued.",
+                requesterOrg.getOrganizationCode(),
+                consentRequest.getPurpose()
         );
 
         return new AccessGrantResponse(
@@ -272,7 +309,18 @@ public class ConsentService {
                 "CONSENT_REQUEST",
                 consentRequest.getId(),
                 consentRequest.getDataPrincipalOrganizationId(),
+                consentRequest.getDataPrincipalId(),
                 "Consent request rejected by Data Principal: " + consentRequest.getDataPrincipalId()
+        );
+
+        Organization requesterOrg = organizationService.getOrganizationEntityById(consentRequest.getRequesterOrganizationId());
+        notificationService.sendNotification(
+                consentRequest.getDataPrincipalId(),
+                NotificationType.CONSENT_DENIED,
+                "Consent Request Denied",
+                "You denied data access request from " + requesterOrg.getName() + ".",
+                requesterOrg.getOrganizationCode(),
+                consentRequest.getPurpose()
         );
     }
 
@@ -307,7 +355,18 @@ public class ConsentService {
                 "CONSENT",
                 consent.getId(),
                 consent.getProviderOrganizationId(),
+                consent.getDataPrincipalId(),
                 "Consent revoked by Principal=" + consent.getDataPrincipalId() + ". Associated grants revoked."
+        );
+
+        Organization requesterOrg = organizationService.getOrganizationEntityById(consent.getRequesterOrganizationId());
+        notificationService.sendNotification(
+                consent.getDataPrincipalId(),
+                NotificationType.CONSENT_REVOKED,
+                "Consent Revoked for " + requesterOrg.getName(),
+                "Your consent for " + requesterOrg.getName() + " has been revoked. All active access grants are invalidated.",
+                requesterOrg.getOrganizationCode(),
+                consent.getPurpose()
         );
     }
 

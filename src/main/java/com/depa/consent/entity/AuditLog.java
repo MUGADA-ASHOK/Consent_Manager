@@ -30,6 +30,9 @@ public class AuditLog {
     @Column(name = "organization_id", length = 64)
     private String organizationId;
 
+    @Column(name = "data_principal_id", length = 64)
+    private String dataPrincipalId;
+
     @Column(name = "details", length = 1000)
     private String details;
 
@@ -40,6 +43,11 @@ public class AuditLog {
 
     public AuditLog(String logId, AuditEventType eventType, String actorUserId, String actorRole,
                     String targetEntityType, String targetEntityId, String organizationId, String details) {
+        this(logId, eventType, actorUserId, actorRole, targetEntityType, targetEntityId, organizationId, null, details);
+    }
+
+    public AuditLog(String logId, AuditEventType eventType, String actorUserId, String actorRole,
+                    String targetEntityType, String targetEntityId, String organizationId, String dataPrincipalId, String details) {
         this.logId = logId;
         this.eventType = eventType;
         this.actorUserId = actorUserId;
@@ -47,6 +55,7 @@ public class AuditLog {
         this.targetEntityType = targetEntityType;
         this.targetEntityId = targetEntityId;
         this.organizationId = organizationId;
+        this.dataPrincipalId = dataPrincipalId;
         this.details = details;
         this.timestamp = Instant.now();
     }
@@ -84,6 +93,14 @@ public class AuditLog {
 
     public String getOrganizationId() {
         return organizationId;
+    }
+
+    public String getDataPrincipalId() {
+        return dataPrincipalId;
+    }
+
+    public void setDataPrincipalId(String dataPrincipalId) {
+        this.dataPrincipalId = dataPrincipalId;
     }
 
     public String getDetails() {

@@ -21,6 +21,12 @@ public class AuditService {
 
     public void logEvent(AuditEventType eventType, String actorUserId, String actorRole,
                          String targetEntityType, String targetEntityId, String organizationId, String details) {
+        logEvent(eventType, actorUserId, actorRole, targetEntityType, targetEntityId, organizationId, null, details);
+    }
+
+    public void logEvent(AuditEventType eventType, String actorUserId, String actorRole,
+                         String targetEntityType, String targetEntityId, String organizationId,
+                         String dataPrincipalId, String details) {
         String logId = "AUD_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         AuditLog auditLog = new AuditLog(
                 logId,
@@ -30,6 +36,7 @@ public class AuditService {
                 targetEntityType,
                 targetEntityId,
                 organizationId,
+                dataPrincipalId,
                 details
         );
         auditLogRepository.save(auditLog);
@@ -43,5 +50,13 @@ public class AuditService {
     @Transactional(readOnly = true)
     public List<AuditLog> getAuditLogsForOrganization(String organizationId) {
         return auditLogRepository.findByOrganizationIdOrderByTimestampDesc(organizationId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AuditLog> getAuditLogsForStudent(String dataPrincipalId) {
+        if (dataPrincipalId == null || dataPrincipalId.isBlank()) {
+            return List.of();
+        }
+        return auditLogRepository.findByDataPrincipalIdOrderByTimestampDesc(dataPrincipalId.trim().toUpperCase());
     }
 }
