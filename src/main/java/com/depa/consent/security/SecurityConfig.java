@@ -51,6 +51,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/access-grants/public-key").permitAll()
                         .requestMatchers("/api/audit/data-flow").permitAll()
                         .requestMatchers("/api/audit/my-logs").authenticated()
+                        .requestMatchers("/api/audit/organization/**").hasAnyRole("ADMIN", "SUPER_ADMIN", "ORG_ADMIN")
                         .requestMatchers("/api/notifications/**").authenticated()
                         .requestMatchers("/api/consents/**").authenticated()
                         .requestMatchers("/api/data-requests/**").authenticated()

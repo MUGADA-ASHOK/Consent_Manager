@@ -14,9 +14,12 @@ import java.util.UUID;
 public class AuditService {
 
     private final AuditLogRepository auditLogRepository;
+    private final com.depa.consent.repository.OrganizationRepository organizationRepository;
 
-    public AuditService(AuditLogRepository auditLogRepository) {
+    public AuditService(AuditLogRepository auditLogRepository,
+                        com.depa.consent.repository.OrganizationRepository organizationRepository) {
         this.auditLogRepository = auditLogRepository;
+        this.organizationRepository = organizationRepository;
     }
 
     public void logEvent(AuditEventType eventType, String actorUserId, String actorRole,
@@ -54,8 +57,28 @@ public class AuditService {
     }
 
     @Transactional(readOnly = true)
-    public List<AuditLog> getAuditLogsForOrganization(String organizationId) {
-        return auditLogRepository.findByOrganizationIdOrderByTimestampDesc(organizationId);
+    public List<AuditLog> getAuditLogsForOrganization(String orgIdentifier) {
+        if (orgIdentifier == null || orgIdentifier.isBlank()) {
+            return List.of();
+        }
+        String cleanId = orgIdentifier.trim();
+        String actualOrgId = cleanId;
+
+        // Resolve by organization code if passed like ORG_COLLEGE_B or COLLEGE_B
+        String possibleCode = cleanId.replaceFirst("^ORG_", "");
+        var orgOpt = organizationRepository.findByOrganizationCode(possibleCode);
+        if (orgOpt.isEmpty()) {
+            orgOpt = organizationRepository.findByOrganizationCode(cleanId);
+        }
+        if (orgOpt.isPresent()) {
+            actualOrgId = orgOpt.get().getOrganizationId();
+        }
+
+        List<AuditLog> logs = auditLogRepository.findByOrganizationIdOrderByTimestampDesc(actualOrgId);
+        if (logs.isEmpty() && !actualOrgId.equals(cleanId)) {
+            logs = auditLogRepository.findByOrganizationIdOrderByTimestampDesc(cleanId);
+        }
+        return logs;
     }
 
     @Transactional(readOnly = true)
