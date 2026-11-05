@@ -34,9 +34,8 @@ export default function StudentDashboard({ activeTab, setActiveTab, setUnreadCou
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState(null);
 
-  // Modal state for issued grant
-  const [issuedGrant, setIssuedGrant] = useState(null);
-  const [copiedToken, setCopiedToken] = useState(false);
+  // Granular field selection per request: { [requestId]: [field1, field2] }
+  const [selectedFieldsMap, setSelectedFieldsMap] = useState({});
 
   // Fetch pending requests
   const fetchPending = async () => {
@@ -44,9 +43,39 @@ export default function StudentDashboard({ activeTab, setActiveTab, setUnreadCou
       const res = await api.get('/api/consents/pending?page=0&size=20');
       const items = res.data.content || res.data || [];
       setPendingRequests(items);
+
+      // Initialize selected fields
+      setSelectedFieldsMap(prev => {
+        const next = { ...prev };
+        items.forEach(req => {
+          const reqId = req.consentRequestId || req.id;
+          if (!next[reqId]) {
+            next[reqId] = [...(req.requestedFields || [])];
+          }
+        });
+        return next;
+      });
     } catch (err) {
       console.error('Error fetching pending consents:', err);
     }
+  };
+
+  const toggleFieldForRequest = (reqId, field) => {
+    setSelectedFieldsMap(prev => {
+      const current = prev[reqId] || [];
+      const updated = current.includes(field)
+        ? current.filter(f => f !== field)
+        : [...current, field];
+      return { ...prev, [reqId]: updated };
+    });
+  };
+
+  const selectAllFields = (reqId, allFields) => {
+    setSelectedFieldsMap(prev => ({ ...prev, [reqId]: [...allFields] }));
+  };
+
+  const deselectAllFields = (reqId) => {
+    setSelectedFieldsMap(prev => ({ ...prev, [reqId]: [] }));
   };
 
   // Fetch active consents
@@ -94,14 +123,23 @@ export default function StudentDashboard({ activeTab, setActiveTab, setUnreadCou
     return () => clearInterval(interval);
   }, []);
 
-  // Approve action
+  // Approve action with granular field consent
   const handleApprove = async (requestId) => {
+    const selected = selectedFieldsMap[requestId] || [];
+    if (selected.length === 0) {
+      alert('Please select at least one attribute to approve, or deny the request.');
+      return;
+    }
     setActionLoading(true);
     setMessage(null);
     try {
-      const res = await api.post(`/api/consents/${requestId}/approve`, {});
-      setIssuedGrant(res.data);
-      setMessage({ type: 'success', text: `Consent approved! Access Grant ${res.data.grantId} issued.` });
+      const res = await api.post(`/api/consents/${requestId}/approve`, {
+        approvedFields: selected
+      });
+      setMessage({
+        type: 'success',
+        text: `Consent approved for ${selected.length} attribute(s) [${selected.join(', ')}]. Access Grant ${res.data.grantId} issued.`
+      });
       await loadAll();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Approval failed' });
@@ -337,19 +375,62 @@ export default function StudentDashboard({ activeTab, setActiveTab, setUnreadCou
                     </div>
                   </div>
 
-                  <div>
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
-                      Requested Academic Attributes
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(req.requestedFields || []).map((field, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-blue-50 text-blue-700 border border-blue-200"
-                        >
-                          {field}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                          Granular Consent: Choose Attributes to Share
                         </span>
-                      ))}
+                        <span className="text-[11px] text-slate-500">
+                          DEPA Principle: You have the sovereign right to authorize only specific data fields.
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => selectAllFields(req.consentRequestId || req.id, req.requestedFields || [])}
+                          className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
+                        >
+                          Select All
+                        </button>
+                        <span className="text-slate-300">|</span>
+                        <button
+                          type="button"
+                          onClick={() => deselectAllFields(req.consentRequestId || req.id)}
+                          className="text-slate-500 hover:text-slate-700 font-semibold hover:underline cursor-pointer"
+                        >
+                          Deselect All
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {(req.requestedFields || []).map((field) => {
+                        const reqId = req.consentRequestId || req.id;
+                        const isChecked = (selectedFieldsMap[reqId] || []).includes(field);
+                        return (
+                          <label
+                            key={field}
+                            className={`flex items-center space-x-2.5 p-2.5 rounded-xl border text-xs font-mono font-semibold cursor-pointer transition-all ${
+                              isChecked
+                                ? 'bg-indigo-50/70 border-indigo-300 text-indigo-900 shadow-xs'
+                                : 'bg-white border-slate-200 text-slate-400 opacity-60'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleFieldForRequest(reqId, field)}
+                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                            />
+                            <span>{field}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="text-[11px] text-slate-600 font-medium pt-1">
+                      Selected for Release: <strong className="text-indigo-700 font-bold">{(selectedFieldsMap[req.consentRequestId || req.id] || []).length}</strong> of {(req.requestedFields || []).length} attributes
                     </div>
                   </div>
 
@@ -361,16 +442,16 @@ export default function StudentDashboard({ activeTab, setActiveTab, setUnreadCou
                       className="px-4 py-2 border border-slate-300 hover:border-rose-300 hover:bg-rose-50 text-slate-700 hover:text-rose-700 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center space-x-1.5"
                     >
                       <XCircle className="w-4 h-4 text-rose-500" />
-                      <span>Deny Access</span>
+                      <span>Deny Request</span>
                     </button>
 
                     <button
                       onClick={() => handleApprove(req.consentRequestId || req.id)}
-                      disabled={actionLoading}
-                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer flex items-center space-x-1.5"
+                      disabled={actionLoading || (selectedFieldsMap[req.consentRequestId || req.id] || []).length === 0}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer flex items-center space-x-1.5 disabled:opacity-40"
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Approve &amp; Issue Grant</span>
+                      <span>Approve Selected ({(selectedFieldsMap[req.consentRequestId || req.id] || []).length} Fields)</span>
                     </button>
                   </div>
                 </div>
@@ -628,71 +709,6 @@ export default function StudentDashboard({ activeTab, setActiveTab, setUnreadCou
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Modal: Access Grant Issued Details */}
-      {issuedGrant && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-2">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-                <h3 className="text-lg font-black text-slate-900">Cryptographic Access Grant Issued</h3>
-              </div>
-              <button
-                onClick={() => setIssuedGrant(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
-              >
-                ×
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600">
-              The Consent Manager has cryptographically signed a verifiable RS256 Access Token.
-              The consumer can now directly present this token to Provider College A to retrieve the authorized records via Diffie-Hellman encrypted peer-to-peer channel.
-            </p>
-
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Access Grant ID:</span>
-                <span className="font-mono font-bold text-indigo-700">{issuedGrant.grantId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Valid Until:</span>
-                <span className="font-semibold text-slate-800">
-                  {new Date(issuedGrant.expiresAt).toLocaleString()}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500 block mb-1">Signed RS256 Access Token (JWT):</span>
-                <div className="relative">
-                  <textarea
-                    readOnly
-                    rows={3}
-                    value={issuedGrant.accessToken}
-                    className="w-full font-mono text-[11px] bg-white border border-slate-300 rounded-lg p-2 pr-10 text-slate-700 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => copyToClipboard(issuedGrant.accessToken)}
-                    className="absolute top-2 right-2 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors cursor-pointer"
-                    title="Copy Token"
-                  >
-                    {copiedToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setIssuedGrant(null)}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                Close &amp; View Dashboard
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

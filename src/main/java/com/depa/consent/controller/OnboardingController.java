@@ -26,4 +26,29 @@ public class OnboardingController {
         BulkOnboardingResponse response = onboardingService.bulkOnboard(request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
+
+    @PostMapping("/student")
+    public ResponseEntity<?> onboardSingleStudent(@RequestBody java.util.Map<String, String> request) {
+        String orgCode = request.getOrDefault("organizationCode", "COLLEGE_B");
+        String studentId = request.get("studentId");
+        String email = request.get("email");
+        String name = request.getOrDefault("name", "Student " + studentId);
+
+        if (studentId == null || studentId.isBlank() || email == null || email.isBlank()) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "studentId and email are required"));
+        }
+
+        com.depa.consent.dto.StudentOnboardingItem item = new com.depa.consent.dto.StudentOnboardingItem(studentId.trim().toUpperCase(), email.trim().toLowerCase(), name);
+        BulkOnboardRequest bulkReq = new BulkOnboardRequest(orgCode, java.util.List.of(item));
+        onboardingService.bulkOnboard(bulkReq);
+
+        return ResponseEntity.ok(java.util.Map.of(
+                "success", true,
+                "message", "Student onboarded successfully to Consent Manager DB",
+                "studentId", studentId.trim().toUpperCase(),
+                "email", email.trim().toLowerCase(),
+                "defaultPassword", studentId.trim().toUpperCase(),
+                "organizationCode", orgCode
+        ));
+    }
 }
